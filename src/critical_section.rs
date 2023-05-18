@@ -7,6 +7,9 @@ pub struct CriticalSection {
     once: crate::once::Once,
 }
 
+unsafe impl Sync for CriticalSection {}
+unsafe impl Send for CriticalSection {}
+
 impl CriticalSection {
     pub const fn new() -> Self {
         CriticalSection {
@@ -18,14 +21,13 @@ impl CriticalSection {
     /// Enters a critical section and return a guard object which
     /// automatically leaves the critical section on `Drop`
     pub fn lock(&'static self) -> SectionGuard {
-        let ptr = self.crit.as_ptr() as *mut _;
-
         self.once.call(|| unsafe {
+        let ptr = self.crit.as_ptr() as *mut _;
             winapi::InitializeCriticalSection(ptr);
         });
 
         unsafe { self.enter(); }
-        SectionGuard { ptr }
+        SectionGuard { section: self }
     }
 
     /// Enters a critical section. This is a low-level API and should be
@@ -48,11 +50,11 @@ impl CriticalSection {
 }
 
 pub struct SectionGuard {
-    ptr: *mut winapi::CRITICAL_SECTION,
+    section: &'static CriticalSection,
 }
 
 impl Drop for SectionGuard {
     fn drop(&mut self) {
-        unsafe { winapi::LeaveCriticalSection(self.ptr); }
+        unsafe { self.section.leave(); }
     }
 }
